@@ -30,10 +30,12 @@ fn main() {
 
         //Countdown-loop
         while total_seconds > 0 {
+            let time_str = format_time(total_seconds);
+
             stdout.execute(MoveTo(0, 0)).unwrap();
             stdout.execute(Clear(terminal::ClearType::All)).unwrap();
 
-            print!("Timer: {}s", total_seconds);
+            print!("Timer:\n \t{}", time_str);
             stdout.flush().unwrap();
 
             std::thread::sleep(std::time::Duration::from_secs(1));
@@ -175,5 +177,19 @@ fn parse_duration(time_str: &str) -> u64 {
         "m" => number * 60,
         "h" => number * 60 * 60,
         _ => number, // Default to seconds if no unit provided
+    }
+}
+
+fn format_time(seconds: u64) -> String {
+    let hours = seconds / 3600;
+    let minutes = (seconds % 3600) / 60;
+    let secs = seconds % 60;
+
+    if hours > 0 {
+        // Format: 01:30:45
+        format!("{:02}:{:02}:{:02}", hours, minutes, secs)
+    } else {
+        // Format: 05:30
+        format!("{:02}:{:02}", minutes, secs)
     }
 }
