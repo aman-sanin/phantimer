@@ -129,6 +129,15 @@ fn spawn_ghost_window(terminal: &str, time: &str) {
                 &format!("noborder, class:^({})$", class_name),
             ])
             .output();
+
+        //Rule: Transparency
+        let _ = std::process::Command::new("hyprctl")
+            .args([
+                "keyword",
+                "windowrulev2",
+                &format!("opacity 0.9 0.2, class:^({})$", class_name),
+            ])
+            .output();
     }
 
     let mut cmd = std::process::Command::new(terminal);
