@@ -41,18 +41,18 @@ pub fn spawn_ghost_window(terminal: &str, time: &str) {
 
 fn apply_hyprland_rules(class_name: &str) {
     let rules = [
-        format!("float, class:^({})$", class_name),
-        format!("pin, class:^({})$", class_name),
-        format!("size 300 150, class:^({})$", class_name),
-        format!("move 100%-310 50, class:^({})$", class_name),
-        format!("noborder, class:^({})$", class_name),
+        format!("match:class ^({})$, size 300 150", class_name),
+        format!("match:class ^({})$, move (monitor_w-310) 50", class_name),
+        format!("match:class ^({})$, float true", class_name),
+        format!("match:class ^({})$, pin true", class_name),
+        format!("match:class ^({})$, noborder true", class_name),
         // Interactive Transparency: 0.9 active, 0.4 inactive
-        format!("opacity 0.9 0.2, class:^({})$", class_name),
+        format!("match:class ^({})$, opacity 0.9 0.2", class_name),
     ];
 
     for rule in rules {
         let _ = Command::new("hyprctl")
-            .args(["keyword", "windowrulev2", &rule])
+            .args(["keyword", "windowrule", &rule])
             .output();
     }
 }
