@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Phantimer
+Comment=Floating Ghost Timer
+Exec=phantimer
+Terminal=true
+Categories=Utility;
+Keywords=timer;countdown;

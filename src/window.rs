@@ -10,7 +10,7 @@ pub fn detect_terminal(user_arg: Option<String>) -> String {
     "foot".to_string()
 }
 
-pub fn spawn_ghost_window(terminal: &str, time: &str) {
+pub fn spawn_ghost_window(terminal: &str, time: Option<&str>, is_pomodoro: bool) {
     let current_exe = std::env::current_exe().expect("Failed to get current executable path");
     let exe_path = current_exe.to_str().expect("Path contains invalid unicode");
 
@@ -33,10 +33,15 @@ pub fn spawn_ghost_window(terminal: &str, time: &str) {
         cmd.arg("-w").arg("300x150");
     }
 
-    let _ = cmd
-        .args([class_flag, class_name, "-e", exe_path, time, "--ghost-mode"])
-        .spawn()
-        .expect("Failed to launch terminal");
+    cmd.arg(class_flag).arg(class_name).arg("-e").arg(exe_path);
+    if is_pomodoro {
+        cmd.arg("--pomodoro");
+    } else if let Some(t) = time {
+        cmd.arg(t);
+    }
+    cmd.arg("--ghost-mode");
+
+    let _ = cmd.spawn().expect("Failed to launch terminal");
 }
 
 fn apply_hyprland_rules(class_name: &str) {

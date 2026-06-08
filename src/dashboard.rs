@@ -79,7 +79,8 @@ pub fn run() -> Result<()> {
                                 // Close Dashboard -> Launch Timer
                                 disable_raw_mode()?;
                                 execute!(std::io::stdout(), LeaveAlternateScreen)?;
-                                window::spawn_ghost_window("foot", &app.input_text);
+                                let term = window::detect_terminal(None);
+                                window::spawn_ghost_window(&term, Some(&app.input_text), false);
                                 return Ok(());
                             }
                         }
@@ -98,10 +99,13 @@ pub fn run() -> Result<()> {
                         KeyCode::Down | KeyCode::Char('j') => app.next_preset(),
                         KeyCode::Enter => {
                             // Launch Selected Preset
+                            let name = app.presets[app.selected_preset].0;
                             let duration = app.presets[app.selected_preset].1;
+                            let is_pomo = name == "Pomodoro";
                             disable_raw_mode()?;
                             execute!(std::io::stdout(), LeaveAlternateScreen)?;
-                            window::spawn_ghost_window("foot", duration);
+                            let term = window::detect_terminal(None);
+                            window::spawn_ghost_window(&term, if is_pomo { None } else { Some(duration) }, is_pomo);
                             return Ok(());
                         }
                         KeyCode::Esc | KeyCode::Char('q') => return Ok(()),

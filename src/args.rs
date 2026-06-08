@@ -10,6 +10,10 @@ pub struct Args {
     #[arg(short = 'T', long)]
     pub terminal: Option<String>,
 
+    /// Activate Pomodoro session
+    #[arg(short = 'p', long)]
+    pub pomodoro: bool,
+
     /// Internal flag: activates the TUI mode
     #[arg(long, hide = true)]
     pub ghost_mode: bool,

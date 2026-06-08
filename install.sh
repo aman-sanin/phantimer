@@ -12,19 +12,12 @@ echo "🚀 Installing to ~/.local/bin/..."
 cp target/release/phantimer ~/.local/bin/
 
 # 4. Create a Desktop Entry (for Rofi/Wofi/Launcher support)
-echo "🖥️  Creating Desktop Entry..."
+# ...
+echo "🖥️  Installing Desktop Entry..."
 mkdir -p ~/.local/share/applications
 
-cat >~/.local/share/applications/phantimer.desktop <<EOF
-[Desktop Entry]
-Type=Application
-Name=Phantimer
-Comment=Floating Ghost Timer
-Exec=$HOME/.local/bin/phantimer
-Terminal=true
-Categories=Utility;
-Keywords=timer;countdown;
-EOF
+# We have to edit the Exec line for local install, or rely on PATH
+sed 's|Exec=phantimer|Exec='"$HOME"'/.local/bin/phantimer|' phantimer.desktop >~/.local/share/applications/phantimer.desktop
 
 # 5. Success
 echo "✅ Phantimer installed! You can now run 'phantimer' from anywhere."
