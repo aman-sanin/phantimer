@@ -1,5 +1,6 @@
 mod app;
 mod args;
+mod config;
 mod dashboard;
 mod notification;
 mod ui;
@@ -10,21 +11,37 @@ use clap::Parser;
 
 fn main() -> Result<()> {
     let args = args::Args::parse();
+    let config = config::Config::load();
 
     if args.ghost_mode {
-        if args.pomodoro {
-            app::run(None, true)?;
-        } else if let Some(ref t) = args.time {
-            app::run(Some(t), false)?;
-        }
+        app::run(
+            args.time.as_deref(),
+            args.pomodoro,
+            args.work,
+            args.short_break,
+            args.long_break,
+            args.rounds,
+            args.interval,
+            &config,
+        )?;
     } else {
-        let term_name = window::detect_terminal(args.terminal);
+        let term_name = window::detect_terminal(args.terminal, &config);
         if let Some(ref t) = args.time {
-            window::spawn_ghost_window(&term_name, Some(t), false);
+            window::spawn_ghost_window(&term_name, Some(t), false, None, None, None, None, None, &config);
         } else if args.pomodoro {
-            window::spawn_ghost_window(&term_name, None, true);
+            window::spawn_ghost_window(
+                &term_name,
+                None,
+                true,
+                args.work.as_deref(),
+                args.short_break.as_deref(),
+                args.long_break.as_deref(),
+                args.rounds,
+                args.interval,
+                &config,
+            );
         } else {
-            dashboard::run()?;
+            dashboard::run(&config)?;
         }
     }
 

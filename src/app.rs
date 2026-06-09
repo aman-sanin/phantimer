@@ -15,41 +15,26 @@ use crate::ui;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PomoStage {
-    Work(u32),
-    ShortBreak(u32),
+    Work,
+    ShortBreak,
     LongBreak,
 }
 
 impl PomoStage {
-    pub fn name(&self) -> String {
+    pub fn duration_secs(&self, durs: PomoDurations) -> u64 {
         match self {
-            PomoStage::Work(idx) => format!("🍅 Work [{}/4]", idx),
-            PomoStage::ShortBreak(idx) => format!("☕ Break [{}/3]", idx),
-            PomoStage::LongBreak => "🎉 Long Break".to_string(),
+            PomoStage::Work => durs.work,
+            PomoStage::ShortBreak => durs.short_break,
+            PomoStage::LongBreak => durs.long_break,
         }
     }
+}
 
-    pub fn duration_secs(&self) -> u64 {
-        match self {
-            PomoStage::Work(_) => 25 * 60,
-            PomoStage::ShortBreak(_) => 5 * 60,
-            PomoStage::LongBreak => 15 * 60,
-        }
-    }
-
-    pub fn next(&self) -> Option<Self> {
-        match self {
-            PomoStage::Work(idx) => {
-                if *idx < 4 {
-                    Some(PomoStage::ShortBreak(*idx))
-                } else {
-                    Some(PomoStage::LongBreak)
-                }
-            }
-            PomoStage::ShortBreak(idx) => Some(PomoStage::Work(*idx + 1)),
-            PomoStage::LongBreak => None,
-        }
-    }
+#[derive(Debug, Clone, Copy)]
+pub struct PomoDurations {
+    pub work: u64,
+    pub short_break: u64,
+    pub long_break: u64,
 }
 
 pub struct TimerState {
@@ -59,10 +44,22 @@ pub struct TimerState {
     pub is_paused: bool,
     pub is_pomodoro: bool,
     pub current_stage: Option<PomoStage>,
+    pub current_round: u32,
+    pub total_rounds: u32,
+    pub long_break_interval: u32,
     pub message: Option<String>,
 }
 
-pub fn run(time_str: Option<&str>, is_pomodoro: bool) -> Result<()> {
+pub fn run(
+    time_str: Option<&str>,
+    is_pomodoro: bool,
+    work_dur: Option<String>,
+    short_dur: Option<String>,
+    long_dur: Option<String>,
+    rounds: Option<u32>,
+    interval: Option<u32>,
+    config: &crate::config::Config,
+) -> Result<()> {
     // 1. Setup Terminal
     enable_raw_mode()?;
     let mut stdout = stdout();
@@ -70,16 +67,49 @@ pub fn run(time_str: Option<&str>, is_pomodoro: bool) -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
+    // Resolve custom Pomodoro durations & parameters if active
+    let pomo_durs = if is_pomodoro {
+        let work_secs = resolve_duration(
+            work_dur.as_deref(),
+            config.pomodoro.as_ref().and_then(|p| p.work.as_deref()),
+            "25m",
+        );
+        let short_secs = resolve_duration(
+            short_dur.as_deref(),
+            config.pomodoro.as_ref().and_then(|p| p.short_break.as_deref()),
+            "5m",
+        );
+        let long_secs = resolve_duration(
+            long_dur.as_deref(),
+            config.pomodoro.as_ref().and_then(|p| p.long_break.as_deref()),
+            "15m",
+        );
+        let r = rounds.unwrap_or_else(|| config.pomodoro.as_ref().and_then(|p| p.rounds).unwrap_or(4));
+        let i = interval.unwrap_or_else(|| config.pomodoro.as_ref().and_then(|p| p.long_break_interval).unwrap_or(4));
+        Some((PomoDurations {
+            work: work_secs,
+            short_break: short_secs,
+            long_break: long_secs,
+        }, r, i))
+    } else {
+        None
+    };
+
     // 2. Initialize State
     let mut state = if is_pomodoro {
-        let stage = PomoStage::Work(1);
+        let (durs, r, i) = pomo_durs.unwrap();
+        let stage = PomoStage::Work;
+        let duration = stage.duration_secs(durs);
         TimerState {
-            title: stage.name(),
-            remaining_secs: stage.duration_secs(),
-            total_secs: stage.duration_secs(),
+            title: format!("🍅 Work [1/{}]", r),
+            remaining_secs: duration,
+            total_secs: duration,
             is_paused: false,
             is_pomodoro: true,
             current_stage: Some(stage),
+            current_round: 1,
+            total_rounds: r,
+            long_break_interval: i,
             message: None,
         }
     } else {
@@ -91,13 +121,16 @@ pub fn run(time_str: Option<&str>, is_pomodoro: bool) -> Result<()> {
             is_paused: false,
             is_pomodoro: false,
             current_stage: None,
+            current_round: 0,
+            total_rounds: 0,
+            long_break_interval: 0,
             message: None,
         }
     };
 
-    // Send initial notification if we are starting Pomodoro
+    // Send initial notification if starting Pomodoro
     if is_pomodoro {
-        crate::notification::send("🍅 Focus Session 1 Started", "Time to get down to work! Focus for 25 minutes.");
+        crate::notification::send("🍅 Focus Session 1 Started", "Time to get down to work!");
     }
 
     let mut last_tick = Instant::now();
@@ -108,7 +141,7 @@ pub fn run(time_str: Option<&str>, is_pomodoro: bool) -> Result<()> {
     loop {
         // Draw UI
         terminal.draw(|f| {
-            ui::render(f, &state);
+            ui::render(f, &state, config);
         })?;
 
         // Handle Input
@@ -130,7 +163,14 @@ pub fn run(time_str: Option<&str>, is_pomodoro: bool) -> Result<()> {
                         } else {
                             None
                         };
-                        last_second_tick = Instant::now(); // Reset second tick on toggle
+                        last_second_tick = Instant::now();
+                    }
+                    KeyCode::Char('R') => {
+                        // Reset current timer/stage to initial length and pause
+                        state.remaining_secs = state.total_secs;
+                        state.is_paused = true;
+                        state.message = Some("RESET • [Space] Start".to_string());
+                        last_second_tick = Instant::now();
                     }
                     _ => {}
                 }
@@ -153,41 +193,59 @@ pub fn run(time_str: Option<&str>, is_pomodoro: bool) -> Result<()> {
         if state.remaining_secs == 0 {
             if state.is_pomodoro {
                 if let Some(current) = state.current_stage {
-                    if let Some(next_stage) = current.next() {
-                        // Send notification
-                        let (title, body) = match next_stage {
-                            PomoStage::Work(idx) => (
-                                format!("🍅 Work Session {}", idx),
-                                "Time to focus! Back to work.".to_string(),
-                            ),
-                            PomoStage::ShortBreak(idx) => (
-                                format!("☕ Break Session {}", idx),
-                                "Great work! Enjoy a 5-minute break.".to_string(),
-                            ),
-                            PomoStage::LongBreak => (
-                                "🎉 Long Break".to_string(),
-                                "Fantastic job! Take a well-deserved 15-minute break.".to_string(),
-                            ),
-                        };
-                        crate::notification::send(&title, &body);
+                    let durs = pomo_durs.unwrap().0;
+                    match current {
+                        PomoStage::Work => {
+                            // Determine if we do a long break or a short break
+                            let is_long_break = state.current_round % state.long_break_interval == 0;
+                            let next_stage = if is_long_break { PomoStage::LongBreak } else { PomoStage::ShortBreak };
+                            
+                            let (title, body) = if is_long_break {
+                                ("🎉 Long Break".to_string(), format!("Completed round {}! Take a long break.", state.current_round))
+                            } else {
+                                (format!("☕ Short Break"), format!("Completed round {}! Take a short break.", state.current_round))
+                            };
+                            crate::notification::send(&title, &body);
 
-                        // Update State for next stage
-                        state.current_stage = Some(next_stage);
-                        state.title = next_stage.name();
-                        state.remaining_secs = next_stage.duration_secs();
-                        state.total_secs = next_stage.duration_secs();
-                        state.is_paused = true; // Start in paused state so user can prepare
-                        state.message = Some("[Space] Start Next Session".to_string());
-                        last_second_tick = Instant::now();
-                    } else {
-                        // Pomodoro set fully complete!
-                        crate::notification::send("🎉 Pomodoro Complete!", "Excellent effort! You have completed all sessions.");
-                        std::thread::sleep(Duration::from_secs(3));
-                        break;
+                            let next_secs = next_stage.duration_secs(durs);
+                            state.current_stage = Some(next_stage);
+                            state.title = match next_stage {
+                                PomoStage::LongBreak => format!("🎉 Long Break [{}/{}]", state.current_round, state.total_rounds),
+                                _ => format!("☕ Break [{}/{}]", state.current_round, state.total_rounds),
+                            };
+                            state.remaining_secs = next_secs;
+                            state.total_secs = next_secs;
+                            state.is_paused = true;
+                            state.message = Some("[Space] Start Next Session".to_string());
+                            last_second_tick = Instant::now();
+                        }
+                        PomoStage::ShortBreak | PomoStage::LongBreak => {
+                            // Transition to next round Work
+                            state.current_round += 1;
+                            if state.current_round > state.total_rounds {
+                                crate::notification::send("🎉 Pomodoro Complete!", "Excellent effort! You have completed all sessions.");
+                                std::thread::sleep(Duration::from_secs(3));
+                                break;
+                            } else {
+                                let next_stage = PomoStage::Work;
+                                let next_secs = next_stage.duration_secs(durs);
+                                crate::notification::send(
+                                    &format!("🍅 Work Session {}", state.current_round),
+                                    "Time to focus! Back to work.",
+                                );
+
+                                state.current_stage = Some(next_stage);
+                                state.title = format!("🍅 Work [{}/{}]", state.current_round, state.total_rounds);
+                                state.remaining_secs = next_secs;
+                                state.total_secs = next_secs;
+                                state.is_paused = true;
+                                state.message = Some("[Space] Start Next Session".to_string());
+                                last_second_tick = Instant::now();
+                            }
+                        }
                     }
                 }
             } else {
-                // Normal timer completed
                 crate::notification::send("🔔 Timer Finished", "Your countdown timer has completed.");
                 std::thread::sleep(Duration::from_secs(2));
                 break;
@@ -199,6 +257,16 @@ pub fn run(time_str: Option<&str>, is_pomodoro: bool) -> Result<()> {
     disable_raw_mode()?;
     execute!(std::io::stdout(), LeaveAlternateScreen)?;
     Ok(())
+}
+
+fn resolve_duration(cli_val: Option<&str>, config_val: Option<&str>, default_str: &str) -> u64 {
+    if let Some(c) = cli_val {
+        parse_duration(c)
+    } else if let Some(cfg) = config_val {
+        parse_duration(cfg)
+    } else {
+        parse_duration(default_str)
+    }
 }
 
 fn parse_duration(time_str: &str) -> u64 {

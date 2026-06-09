@@ -4,7 +4,7 @@ use ratatui::{
 };
 use crate::app::{TimerState, PomoStage};
 
-pub fn render(f: &mut Frame, state: &TimerState) {
+pub fn render(f: &mut Frame, state: &TimerState, config: &crate::config::Config) {
     let area = f.area();
 
     // Split layout vertically:
@@ -20,16 +20,28 @@ pub fn render(f: &mut Frame, state: &TimerState) {
         ])
         .split(area);
 
+    // Resolve color configuration values
+    let (color_timer, color_work, color_break, color_paused) = if let Some(ref colors) = config.colors {
+        (
+            colors.timer_text.as_ref().map(|c| crate::config::parse_color(c)).unwrap_or(Color::Cyan),
+            colors.work_session.as_ref().map(|c| crate::config::parse_color(c)).unwrap_or(Color::Red),
+            colors.break_session.as_ref().map(|c| crate::config::parse_color(c)).unwrap_or(Color::Green),
+            colors.paused_text.as_ref().map(|c| crate::config::parse_color(c)).unwrap_or(Color::Yellow),
+        )
+    } else {
+        (Color::Cyan, Color::Red, Color::Green, Color::Yellow)
+    };
+
     // --- 1. TITLE / HEADER ---
     let title_style = if state.is_paused {
         Style::default().fg(Color::DarkGray).add_modifier(Modifier::DIM)
     } else if state.is_pomodoro {
         match state.current_stage {
-            Some(PomoStage::Work(_)) => Style::default().fg(Color::LightRed).add_modifier(Modifier::BOLD),
-            _ => Style::default().fg(Color::LightGreen).add_modifier(Modifier::BOLD),
+            Some(PomoStage::Work) => Style::default().fg(color_work).add_modifier(Modifier::BOLD),
+            _ => Style::default().fg(color_break).add_modifier(Modifier::BOLD),
         }
     } else {
-        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+        Style::default().fg(color_timer).add_modifier(Modifier::BOLD)
     };
 
     let title_para = Paragraph::new(state.title.as_str())
@@ -45,11 +57,11 @@ pub fn render(f: &mut Frame, state: &TimerState) {
         Color::DarkGray
     } else if state.is_pomodoro {
         match state.current_stage {
-            Some(PomoStage::Work(_)) => Color::Red,
-            _ => Color::Green,
+            Some(PomoStage::Work) => color_work,
+            _ => color_break,
         }
     } else {
-        Color::Cyan
+        color_timer
     };
 
     // Sub-layout inside Middle chunk to center both clock and optional subtext vertically
@@ -71,8 +83,8 @@ pub fn render(f: &mut Frame, state: &TimerState) {
 
     // Render helper status message if any
     if let Some(ref msg) = state.message {
-        let msg_style = if state.is_paused && msg.contains("PAUSED") {
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        let msg_style = if state.is_paused && (msg.contains("PAUSED") || msg.contains("RESET")) {
+            Style::default().fg(color_paused).add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC)
         };
@@ -95,11 +107,11 @@ pub fn render(f: &mut Frame, state: &TimerState) {
         Color::Red // critical alert state
     } else if state.is_pomodoro {
         match state.current_stage {
-            Some(PomoStage::Work(_)) => Color::LightRed,
-            _ => Color::LightGreen,
+            Some(PomoStage::Work) => color_work,
+            _ => color_break,
         }
     } else {
-        Color::Green
+        color_break
     };
 
     let gauge = Gauge::default()

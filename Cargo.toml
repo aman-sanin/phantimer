@@ -9,3 +9,5 @@ clap = { version = "4.5.53", features = ["derive"] }
 crossterm = "0.29.0"
 duration-str = "0.18.0"
 ratatui = "0.30.0"
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
