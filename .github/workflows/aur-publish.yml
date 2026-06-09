@@ -3,22 +3,26 @@ name: Publish to AUR
 on:
   push:
     tags:
-      - 'v*'  # Triggers when you push a tag like v0.1.0
+      - "v*"
 
 jobs:
   aur-publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Configure Git
-        run: git config --global --add safe.directory /github/workspace
+      # Fix the "dubious ownership" Git error (critical!)
+      - name: Fix Git safe directory
+        run: git config --global --add safe.directory '*'
 
-      - name: Publish AUR package
+      # Deploy to AUR using the official action
+      - name: Publish to AUR
         uses: anas-elgarhy/aur-release-action@v3.8
         with:
-          package_name: phantimer                              
-          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}  
-          github_token: ${{ secrets.GITHUB_TOKEN }}            
-          git_username: "aman-sanin"                           
+          package_name: phantimer
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          git_username: "aman-sanin"
           git_email: "amansaninkmct@gmail.com"
+          commit_message: "Update to version %VERSION%"
