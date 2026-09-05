@@ -17,6 +17,7 @@ fn main() -> Result<()> {
         app::run(
             args.time.as_deref(),
             args.pomodoro,
+            args.stopwatch,
             args.work,
             args.short_break,
             args.long_break,
@@ -26,13 +27,38 @@ fn main() -> Result<()> {
         )?;
     } else {
         let term_name = window::detect_terminal(args.terminal, &config);
-        if let Some(ref t) = args.time {
-            window::spawn_ghost_window(&term_name, Some(t), false, None, None, None, None, None, &config);
+        if args.stopwatch {
+            window::spawn_ghost_window(
+                &term_name,
+                None,
+                false,
+                true,
+                None,
+                None,
+                None,
+                None,
+                None,
+                &config,
+            );
+        } else if let Some(ref t) = args.time {
+            window::spawn_ghost_window(
+                &term_name,
+                Some(t),
+                false,
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+                &config,
+            );
         } else if args.pomodoro {
             window::spawn_ghost_window(
                 &term_name,
                 None,
                 true,
+                false,
                 args.work.as_deref(),
                 args.short_break.as_deref(),
                 args.long_break.as_deref(),

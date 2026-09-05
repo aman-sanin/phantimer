@@ -41,8 +41,10 @@ pub struct TimerState {
     pub title: String,
     pub remaining_secs: u64,
     pub total_secs: u64,
+    pub elapsed_secs: u64,
     pub is_paused: bool,
     pub is_pomodoro: bool,
+    pub is_stopwatch: bool,
     pub current_stage: Option<PomoStage>,
     pub current_round: u32,
     pub total_rounds: u32,
@@ -53,6 +55,7 @@ pub struct TimerState {
 pub fn run(
     time_str: Option<&str>,
     is_pomodoro: bool,
+    is_stopwatch: bool,
     work_dur: Option<String>,
     short_dur: Option<String>,
     long_dur: Option<String>,
@@ -104,12 +107,29 @@ pub fn run(
             title: format!("🍅 Work [1/{}]", r),
             remaining_secs: duration,
             total_secs: duration,
+            elapsed_secs: 0,
             is_paused: false,
             is_pomodoro: true,
+            is_stopwatch: false,
             current_stage: Some(stage),
             current_round: 1,
             total_rounds: r,
             long_break_interval: i,
+            message: None,
+        }
+    } else if is_stopwatch {
+        TimerState {
+            title: "⏱ Stopwatch".to_string(),
+            remaining_secs: 0,
+            total_secs: 0,
+            elapsed_secs: 0,
+            is_paused: false,
+            is_pomodoro: false,
+            is_stopwatch: true,
+            current_stage: None,
+            current_round: 0,
+            total_rounds: 0,
+            long_break_interval: 0,
             message: None,
         }
     } else {
@@ -118,8 +138,10 @@ pub fn run(
             title: "Timer".to_string(),
             remaining_secs: total_secs,
             total_secs,
+            elapsed_secs: 0,
             is_paused: false,
             is_pomodoro: false,
+            is_stopwatch: false,
             current_stage: None,
             current_round: 0,
             total_rounds: 0,
@@ -166,10 +188,16 @@ pub fn run(
                         last_second_tick = Instant::now();
                     }
                     KeyCode::Char('R') => {
-                        // Reset current timer/stage to initial length and pause
-                        state.remaining_secs = state.total_secs;
-                        state.is_paused = true;
-                        state.message = Some("RESET • [Space] Start".to_string());
+                        // Reset current timer/stage/stopwatch
+                        if state.is_stopwatch {
+                            state.elapsed_secs = 0;
+                            state.is_paused = true;
+                            state.message = Some("RESET • [Space] Start".to_string());
+                        } else {
+                            state.remaining_secs = state.total_secs;
+                            state.is_paused = true;
+                            state.message = Some("RESET • [Space] Start".to_string());
+                        }
                         last_second_tick = Instant::now();
                     }
                     _ => {}
@@ -183,14 +211,18 @@ pub fn run(
 
         // Precise 1-second ticks
         if last_second_tick.elapsed() >= Duration::from_secs(1) {
-            if !state.is_paused && state.remaining_secs > 0 {
-                state.remaining_secs = state.remaining_secs.saturating_sub(1);
+            if !state.is_paused {
+                if state.is_stopwatch {
+                    state.elapsed_secs = state.elapsed_secs.saturating_add(1);
+                } else if state.remaining_secs > 0 {
+                    state.remaining_secs = state.remaining_secs.saturating_sub(1);
+                }
             }
             last_second_tick = Instant::now();
         }
 
         // Handle Stage Completion / Timer Finish
-        if state.remaining_secs == 0 {
+        if !state.is_stopwatch && state.remaining_secs == 0 {
             if state.is_pomodoro {
                 if let Some(current) = state.current_stage {
                     let durs = pomo_durs.unwrap().0;

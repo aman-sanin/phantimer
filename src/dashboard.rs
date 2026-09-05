@@ -13,6 +13,7 @@ use crate::window;
 enum Focus {
     Input,
     Presets,
+    Stopwatch,
     Pomodoro,
 }
 
@@ -146,6 +147,7 @@ pub fn run(config: &crate::config::Config) -> Result<()> {
                                     &term,
                                     Some(&app.input_text),
                                     false,
+                                    false,
                                     None,
                                     None,
                                     None,
@@ -182,6 +184,7 @@ pub fn run(config: &crate::config::Config) -> Result<()> {
                                 &term,
                                 if is_pomo { None } else { Some(duration) },
                                 is_pomo,
+                                false,
                                 None,
                                 None,
                                 None,
@@ -192,12 +195,40 @@ pub fn run(config: &crate::config::Config) -> Result<()> {
                             return Ok(());
                         }
                         KeyCode::Esc | KeyCode::Char('q') => break,
-                        KeyCode::Tab => app.focus = Focus::Pomodoro,
+                        KeyCode::Tab => app.focus = Focus::Stopwatch,
                         KeyCode::BackTab => app.focus = Focus::Input,
                         _ => {}
                     },
 
-                    // --- MODE C: POMODORO COLUMN ---
+                    // --- MODE C: STOPWATCH COLUMN ---
+                    Focus::Stopwatch => match key.code {
+                        KeyCode::Enter => {
+                            disable_raw_mode()?;
+                            execute!(std::io::stdout(), LeaveAlternateScreen)?;
+                            let term = window::detect_terminal(None, config);
+                            window::spawn_ghost_window(
+                                &term,
+                                None,
+                                false,
+                                true,
+                                None,
+                                None,
+                                None,
+                                None,
+                                None,
+                                config,
+                            );
+                            return Ok(());
+                        }
+                        KeyCode::Up | KeyCode::Char('k') => app.focus = Focus::Presets,
+                        KeyCode::Down | KeyCode::Char('j') => app.focus = Focus::Pomodoro,
+                        KeyCode::Esc | KeyCode::Char('q') => break,
+                        KeyCode::Tab => app.focus = Focus::Pomodoro,
+                        KeyCode::BackTab => app.focus = Focus::Presets,
+                        _ => {}
+                    },
+
+                    // --- MODE D: POMODORO COLUMN ---
                     Focus::Pomodoro => match key.code {
                         KeyCode::Up | KeyCode::Char('k') => app.pomo_field = app.pomo_field.prev(),
                         KeyCode::Down | KeyCode::Char('j') => app.pomo_field = app.pomo_field.next(),
@@ -211,6 +242,7 @@ pub fn run(config: &crate::config::Config) -> Result<()> {
                                 &term,
                                 None,
                                 true,
+                                false,
                                 Some(&app.pomo_work),
                                 Some(&app.pomo_short),
                                 Some(&app.pomo_long),
@@ -222,7 +254,7 @@ pub fn run(config: &crate::config::Config) -> Result<()> {
                         }
                         KeyCode::Esc | KeyCode::Char('q') => break,
                         KeyCode::Tab => app.focus = Focus::Input,
-                        KeyCode::BackTab => app.focus = Focus::Presets,
+                        KeyCode::BackTab => app.focus = Focus::Stopwatch,
                         KeyCode::Char(c) => {
                             match app.pomo_field {
                                 PomoField::Work => app.pomo_work.push(c),
@@ -306,7 +338,7 @@ fn ui(f: &mut Frame, app: &mut DashboardApp) {
         );
     f.render_widget(input, chunks[1]);
 
-    // --- 3. MIDDLE AREA (Presets & Pomodoro side-by-side) ---
+    // --- 3. MIDDLE AREA (Presets + Stopwatch on Left, Pomodoro on Right) ---
     let middle_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
@@ -314,6 +346,14 @@ fn ui(f: &mut Frame, app: &mut DashboardApp) {
             Constraint::Percentage(50),
         ])
         .split(chunks[2]);
+
+    let left_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(6),    // Presets
+            Constraint::Length(6), // Stopwatch
+        ])
+        .split(middle_chunks[0]);
 
     // --- PRESETS LIST ---
     let items: Vec<ListItem> = app
@@ -347,7 +387,51 @@ fn ui(f: &mut Frame, app: &mut DashboardApp) {
 
     let mut state = ListState::default();
     state.select(Some(app.selected_preset));
-    f.render_stateful_widget(list, middle_chunks[0], &mut state);
+    f.render_stateful_widget(list, left_chunks[0], &mut state);
+
+    // --- STOPWATCH PANEL ---
+    let sw_style = match app.focus {
+        Focus::Stopwatch => Style::default().fg(Color::Cyan),
+        _ => Style::default().fg(Color::DarkGray),
+    };
+
+    let sw_block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Stopwatch ")
+        .border_style(sw_style);
+
+    let sw_inner_area = sw_block.inner(left_chunks[1]);
+    f.render_widget(sw_block, left_chunks[1]);
+
+    let sw_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1), // Description
+            Constraint::Length(3), // Start Button
+        ])
+        .split(sw_inner_area);
+
+    let sw_desc = Paragraph::new("Count up from 00:00 • Track elapsed task time")
+        .style(Style::default().fg(Color::DarkGray))
+        .alignment(Alignment::Center);
+    f.render_widget(sw_desc, sw_layout[0]);
+
+    let sw_btn_field_style = if app.focus == Focus::Stopwatch {
+        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+    let sw_btn_style = if app.focus == Focus::Stopwatch {
+        Style::default().bg(Color::Cyan).fg(Color::Black).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::White)
+    };
+
+    let sw_button = Paragraph::new(" [ Start Stopwatch ] ")
+        .alignment(Alignment::Center)
+        .style(sw_btn_style)
+        .block(Block::default().borders(Borders::ALL).border_style(sw_btn_field_style));
+    f.render_widget(sw_button, sw_layout[1]);
 
     // --- CUSTOM POMODORO PANEL ---
     let pomo_style = match app.focus {
@@ -415,9 +499,10 @@ fn ui(f: &mut Frame, app: &mut DashboardApp) {
     // --- 4. FOOTER ---
     let help_text = match app.focus {
         Focus::Input => "Type duration (e.g. 10m) • <Enter> Start • <Tab> Presets",
-        Focus::Presets => "↑/↓ Navigate • <Enter> Select • <Tab> Pomodoro Settings • <Shift+Tab> Input",
+        Focus::Presets => "↑/↓ Navigate • <Enter> Select • <Tab> Stopwatch • <Shift+Tab> Input",
+        Focus::Stopwatch => "<Enter> Start Stopwatch • <Tab> Pomodoro Settings • <Shift+Tab> Presets",
         Focus::Pomodoro => match app.pomo_field {
-            PomoField::StartButton => "↑/↓ Navigate • <Enter> Start Pomodoro • <Tab> Input • <Shift+Tab> Presets",
+            PomoField::StartButton => "↑/↓ Navigate • <Enter> Start Pomodoro • <Tab> Input • <Shift+Tab> Stopwatch",
             _ => "Type value (e.g. 25m / 4) • <Enter> Start Pomodoro • ↑/↓ Navigate • <Tab> Input",
         }
     };

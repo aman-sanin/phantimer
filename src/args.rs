@@ -14,6 +14,10 @@ pub struct Args {
     #[arg(short = 'p', long)]
     pub pomodoro: bool,
 
+    /// Activate Stopwatch mode
+    #[arg(short = 's', long)]
+    pub stopwatch: bool,
+
     /// Custom Pomodoro work session duration (e.g., 25m)
     #[arg(short = 'W', long)]
     pub work: Option<String>,

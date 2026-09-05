@@ -50,7 +50,12 @@ pub fn render(f: &mut Frame, state: &TimerState, config: &crate::config::Config)
     f.render_widget(title_para, chunks[0]);
 
     // --- 2. COUNTDOWN & STATUS MSG ---
-    let time_str = format_time(state.remaining_secs);
+    let display_secs = if state.is_stopwatch {
+        state.elapsed_secs
+    } else {
+        state.remaining_secs
+    };
+    let time_str = format_time(display_secs);
     
     // Choose dynamic color schemes
     let time_color = if state.is_paused {
@@ -95,30 +100,43 @@ pub fn render(f: &mut Frame, state: &TimerState, config: &crate::config::Config)
     }
 
     // --- 3. BOTTOM PROGRESS BAR ---
-    let ratio = if state.total_secs > 0 {
-        state.remaining_secs as f64 / state.total_secs as f64
+    let gauge = if state.is_stopwatch {
+        let gauge_color = if state.is_paused {
+            Color::DarkGray
+        } else {
+            color_timer
+        };
+        Gauge::default()
+            .block(Block::default().borders(Borders::TOP))
+            .gauge_style(Style::default().fg(gauge_color))
+            .ratio(1.0)
+            .label(format!("Elapsed: {}", format_time(state.elapsed_secs)))
     } else {
-        0.0
-    };
+        let ratio = if state.total_secs > 0 {
+            state.remaining_secs as f64 / state.total_secs as f64
+        } else {
+            0.0
+        };
 
-    let gauge_color = if state.is_paused {
-        Color::DarkGray
-    } else if ratio < 0.2 {
-        Color::Red // critical alert state
-    } else if state.is_pomodoro {
-        match state.current_stage {
-            Some(PomoStage::Work) => color_work,
-            _ => color_break,
-        }
-    } else {
-        color_break
-    };
+        let gauge_color = if state.is_paused {
+            Color::DarkGray
+        } else if ratio < 0.2 {
+            Color::Red // critical alert state
+        } else if state.is_pomodoro {
+            match state.current_stage {
+                Some(PomoStage::Work) => color_work,
+                _ => color_break,
+            }
+        } else {
+            color_break
+        };
 
-    let gauge = Gauge::default()
-        .block(Block::default().borders(Borders::TOP))
-        .gauge_style(Style::default().fg(gauge_color))
-        .ratio(ratio)
-        .label(format!("{:.0}%", ratio * 100.0));
+        Gauge::default()
+            .block(Block::default().borders(Borders::TOP))
+            .gauge_style(Style::default().fg(gauge_color))
+            .ratio(ratio)
+            .label(format!("{:.0}%", ratio * 100.0))
+    };
 
     f.render_widget(gauge, chunks[2]);
 }

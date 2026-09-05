@@ -17,6 +17,7 @@ pub fn spawn_ghost_window(
     terminal: &str,
     time: Option<&str>,
     is_pomodoro: bool,
+    is_stopwatch: bool,
     work: Option<&str>,
     short_break: Option<&str>,
     long_break: Option<&str>,
@@ -64,6 +65,8 @@ pub fn spawn_ghost_window(
         if let Some(i) = interval {
             cmd.arg("--interval").arg(i.to_string());
         }
+    } else if is_stopwatch {
+        cmd.arg("--stopwatch");
     } else if let Some(t) = time {
         cmd.arg(t);
     }

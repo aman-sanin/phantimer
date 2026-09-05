@@ -1,6 +1,6 @@
 # Maintainer: Your Name <your_email@example.com>
 pkgname=phantimer
-pkgver=0.1.0
+pkgver=0.1.3
 pkgrel=1
 pkgdesc="A ghost timer window spawner for Hyprland"
 arch=('x86_64')
