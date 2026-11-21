@@ -73,6 +73,9 @@ long_break = "15m"
 rounds = 4
 long_break_interval = 4
 
+# Enable or disable completion audio alert (default: true)
+sound = true
+
 # Custom theme colors for the TUI countdown elements
 # Accepts: Black, Red, Green, Yellow, Blue, Magenta, Cyan, Gray, DarkGray,
 #          LightRed, LightGreen, LightYellow, LightBlue, LightMagenta, LightCyan, White
@@ -82,15 +85,10 @@ work_session = "Red"
 break_session = "Green"
 paused_text = "Yellow"
 
-# Custom Hyprland window rules to apply dynamically
+# Custom Hyprland window rules to apply dynamically (using Hyprland Lua format)
 [hyprland]
 rules = [
-    "match:class ^(floating-timer)$, size 300 150",
-    "match:class ^(floating-timer)$, move (monitor_w-310) 50",
-    "match:class ^(floating-timer)$, float true",
-    "match:class ^(floating-timer)$, pin true",
-    "match:class ^(floating-timer)$, noborder true",
-    "match:class ^(floating-timer)$, opacity 0.9 0.2"
+    'hl.window_rule({ match = { class = "^(floating-timer)$" }, size = { 300, 150 }, move = "(monitor_w-310) 50", float = true, pin = true, border_size = 0, opacity = "0.9 0.2" })'
 ]
 ```
 

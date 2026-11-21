@@ -33,7 +33,9 @@ pub fn render(f: &mut Frame, state: &TimerState, config: &crate::config::Config)
     };
 
     // --- 1. TITLE / HEADER ---
-    let title_style = if state.is_paused {
+    let title_style = if state.is_done {
+        Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+    } else if state.is_paused {
         Style::default().fg(Color::DarkGray).add_modifier(Modifier::DIM)
     } else if state.is_pomodoro {
         match state.current_stage {
@@ -58,7 +60,9 @@ pub fn render(f: &mut Frame, state: &TimerState, config: &crate::config::Config)
     let time_str = format_time(display_secs);
     
     // Choose dynamic color schemes
-    let time_color = if state.is_paused {
+    let time_color = if state.is_done {
+        Color::Green
+    } else if state.is_paused {
         Color::DarkGray
     } else if state.is_pomodoro {
         match state.current_stage {
@@ -69,48 +73,108 @@ pub fn render(f: &mut Frame, state: &TimerState, config: &crate::config::Config)
         color_timer
     };
 
-    // Sub-layout inside Middle chunk to center both clock and optional subtext vertically
-    let middle_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1), // Top empty space padding
-            Constraint::Length(1), // Large clock text
-            Constraint::Length(1), // Optional blinking/small helper message
-            Constraint::Min(0),    // Bottom padding
-        ])
-        .split(chunks[1]);
+    let big_lines = if state.is_done {
+        Some(format_big_done())
+    } else {
+        Some(format_big_time(&time_str))
+    };
+    let big_width = big_lines.as_ref().map(|l| l[0].chars().count() as u16).unwrap_or(0);
+    let use_big = chunks[1].height >= 4 && chunks[1].width >= big_width + 2;
 
-    // Render Large Clock centered
-    let time_para = Paragraph::new(time_str)
-        .alignment(Alignment::Center)
-        .style(Style::default().fg(time_color).add_modifier(Modifier::BOLD));
-    f.render_widget(time_para, middle_layout[1]);
+    if use_big {
+        let lines = big_lines.unwrap();
+        let big_text = lines.join("\n");
+        let available_h = chunks[1].height;
+        let needed_h = if state.message.is_some() { 4 } else { 3 };
+        let top_pad = available_h.saturating_sub(needed_h) / 2;
 
-    // Render helper status message if any
-    if let Some(ref msg) = state.message {
-        let msg_style = if state.is_paused && (msg.contains("PAUSED") || msg.contains("RESET")) {
-            Style::default().fg(color_paused).add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC)
-        };
-        let msg_para = Paragraph::new(msg.as_str())
+        let mut constraints = vec![
+            Constraint::Length(top_pad),
+            Constraint::Length(3),
+        ];
+        if state.message.is_some() {
+            constraints.push(Constraint::Length(1));
+        }
+        constraints.push(Constraint::Min(0));
+
+        let middle_layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(constraints)
+            .split(chunks[1]);
+
+        let time_para = Paragraph::new(big_text)
             .alignment(Alignment::Center)
-            .style(msg_style);
-        f.render_widget(msg_para, middle_layout[2]);
+            .style(Style::default().fg(time_color).add_modifier(Modifier::BOLD));
+        f.render_widget(time_para, middle_layout[1]);
+
+        if let Some(ref msg) = state.message {
+            let msg_style = if state.is_done {
+                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+            } else if state.is_paused && (msg.contains("PAUSED") || msg.contains("RESET")) {
+                Style::default().fg(color_paused).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC)
+            };
+            let msg_para = Paragraph::new(msg.as_str())
+                .alignment(Alignment::Center)
+                .style(msg_style);
+            f.render_widget(msg_para, middle_layout[2]);
+        }
+    } else {
+        let middle_layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(chunks[1].height.saturating_sub(2) / 2),
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Min(0),
+            ])
+            .split(chunks[1]);
+
+        let display_text = if state.is_done {
+            "✔ DONE".to_string()
+        } else {
+            time_str
+        };
+        let time_para = Paragraph::new(display_text)
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(time_color).add_modifier(Modifier::BOLD));
+        f.render_widget(time_para, middle_layout[1]);
+
+        if let Some(ref msg) = state.message {
+            let msg_style = if state.is_done {
+                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+            } else if state.is_paused && (msg.contains("PAUSED") || msg.contains("RESET")) {
+                Style::default().fg(color_paused).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC)
+            };
+            let msg_para = Paragraph::new(msg.as_str())
+                .alignment(Alignment::Center)
+                .style(msg_style);
+            f.render_widget(msg_para, middle_layout[2]);
+        }
     }
 
     // --- 3. BOTTOM PROGRESS BAR ---
-    let gauge = if state.is_stopwatch {
+    let gauge = if state.is_done {
+        Gauge::default()
+            .block(Block::default().borders(Borders::TOP))
+            .gauge_style(Style::default().fg(Color::Green))
+            .ratio(1.0)
+            .label("DONE")
+    } else if state.is_stopwatch {
         let gauge_color = if state.is_paused {
             Color::DarkGray
         } else {
             color_timer
         };
+        let gauge_label = if state.is_paused { "PAUSED" } else { "" };
         Gauge::default()
             .block(Block::default().borders(Borders::TOP))
             .gauge_style(Style::default().fg(gauge_color))
             .ratio(1.0)
-            .label(format!("Elapsed: {}", format_time(state.elapsed_secs)))
+            .label(gauge_label)
     } else {
         let ratio = if state.total_secs > 0 {
             state.remaining_secs as f64 / state.total_secs as f64
@@ -139,6 +203,79 @@ pub fn render(f: &mut Frame, state: &TimerState, config: &crate::config::Config)
     };
 
     f.render_widget(gauge, chunks[2]);
+}
+
+fn get_big_digit_row(c: char, row: usize) -> &'static str {
+    match (c, row) {
+        ('0', 0) => "█▀█",
+        ('0', 1) => "█ █",
+        ('0', 2) => "█▄█",
+
+        ('1', 0) => " █ ",
+        ('1', 1) => " █ ",
+        ('1', 2) => " █ ",
+
+        ('2', 0) => "█▀█",
+        ('2', 1) => " ▄▀",
+        ('2', 2) => "█▄▄",
+
+        ('3', 0) => "█▀█",
+        ('3', 1) => " ▀█",
+        ('3', 2) => "█▄█",
+
+        ('4', 0) => "█ █",
+        ('4', 1) => "█▄█",
+        ('4', 2) => "  █",
+
+        ('5', 0) => "█▀▀",
+        ('5', 1) => "▀▀█",
+        ('5', 2) => "▄▄█",
+
+        ('6', 0) => "█▀▀",
+        ('6', 1) => "█▀█",
+        ('6', 2) => "█▄█",
+
+        ('7', 0) => "▀▀█",
+        ('7', 1) => "  █",
+        ('7', 2) => "  █",
+
+        ('8', 0) => "█▀█",
+        ('8', 1) => "█▀█",
+        ('8', 2) => "█▄█",
+
+        ('9', 0) => "█▀█",
+        ('9', 1) => "▀▀█",
+        ('9', 2) => " ▄█",
+
+        (':', 0) => " ",
+        (':', 1) => "•",
+        (':', 2) => "•",
+
+        _ => "   ",
+    }
+}
+
+fn format_big_time(time_str: &str) -> Vec<String> {
+    let mut rows = vec![String::new(), String::new(), String::new()];
+    for (i, c) in time_str.chars().enumerate() {
+        if i > 0 {
+            rows[0].push(' ');
+            rows[1].push(' ');
+            rows[2].push(' ');
+        }
+        rows[0].push_str(get_big_digit_row(c, 0));
+        rows[1].push_str(get_big_digit_row(c, 1));
+        rows[2].push_str(get_big_digit_row(c, 2));
+    }
+    rows
+}
+
+fn format_big_done() -> Vec<String> {
+    vec![
+        "█▀▄  █▀█  █▄ █  █▀▀".to_string(),
+        "█ █  █ █  █ ▀█  █▀▀".to_string(),
+        "▀▀   ▀▀▀  ▀  ▀  ▀▀▀".to_string(),
+    ]
 }
 
 // Helper: Formats seconds into 00:00:00 or 00:00

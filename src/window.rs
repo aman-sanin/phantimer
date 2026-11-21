@@ -77,13 +77,10 @@ pub fn spawn_ghost_window(
 
 fn apply_hyprland_rules(class_name: &str, config: &crate::config::Config) {
     let default_rules = vec![
-        format!("match:class ^({})$, size 300 150", class_name),
-        format!("match:class ^({})$, move (monitor_w-310) 50", class_name),
-        format!("match:class ^({})$, float true", class_name),
-        format!("match:class ^({})$, pin true", class_name),
-        format!("match:class ^({})$, noborder true", class_name),
-        // Interactive Transparency: 0.9 active, 0.4 inactive
-        format!("match:class ^({})$, opacity 0.9 0.2", class_name),
+        format!(
+            r#"hl.window_rule({{ match = {{ class = "^({})$" }}, size = {{ 300, 150 }}, move = "(monitor_w-310) 50", float = true, pin = true, border_size = 0, opacity = "0.9 0.2" }})"#,
+            class_name
+        ),
     ];
 
     let rules = if let Some(ref hypr) = config.hyprland {
@@ -97,8 +94,15 @@ fn apply_hyprland_rules(class_name: &str, config: &crate::config::Config) {
     };
 
     for rule in rules {
-        let _ = Command::new("hyprctl")
-            .args(["keyword", "windowrule", &rule])
-            .output();
+        if rule.trim().starts_with("hl.") || rule.contains("hl.window_rule") {
+            let _ = Command::new("hyprctl")
+                .args(["eval", &rule])
+                .output();
+        } else {
+            // Backward compatibility with legacy keyword syntax
+            let _ = Command::new("hyprctl")
+                .args(["keyword", "windowrule", &rule])
+                .output();
+        }
     }
 }

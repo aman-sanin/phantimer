@@ -10,6 +10,7 @@ pub struct Config {
     pub pomodoro: Option<PomodoroConfig>,
     pub colors: Option<ColorsConfig>,
     pub hyprland: Option<HyprlandConfig>,
+    pub sound: Option<bool>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -87,14 +88,10 @@ impl Default for Config {
             }),
             hyprland: Some(HyprlandConfig {
                 rules: Some(vec![
-                    "match:class ^(floating-timer)$, size 300 150".to_string(),
-                    "match:class ^(floating-timer)$, move (monitor_w-310) 50".to_string(),
-                    "match:class ^(floating-timer)$, float true".to_string(),
-                    "match:class ^(floating-timer)$, pin true".to_string(),
-                    "match:class ^(floating-timer)$, noborder true".to_string(),
-                    "match:class ^(floating-timer)$, opacity 0.9 0.2".to_string(),
+                    r#"hl.window_rule({ match = { class = "^(floating-timer)$" }, size = { 300, 150 }, move = "(monitor_w-310) 50", float = true, pin = true, border_size = 0, opacity = "0.9 0.2" })"#.to_string(),
                 ]),
             }),
+            sound: Some(true),
         }
     }
 }

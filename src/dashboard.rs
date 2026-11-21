@@ -171,6 +171,8 @@ pub fn run(config: &crate::config::Config) -> Result<()> {
                     Focus::Presets => match key.code {
                         KeyCode::Up | KeyCode::Char('k') => app.previous_preset(),
                         KeyCode::Down | KeyCode::Char('j') => app.next_preset(),
+                        KeyCode::Right | KeyCode::Char('l') | KeyCode::Tab => app.focus = Focus::Stopwatch,
+                        KeyCode::BackTab => app.focus = Focus::Input,
                         KeyCode::Enter => {
                             let name = &app.presets[app.selected_preset].0;
                             let duration = &app.presets[app.selected_preset].1;
@@ -195,8 +197,6 @@ pub fn run(config: &crate::config::Config) -> Result<()> {
                             return Ok(());
                         }
                         KeyCode::Esc | KeyCode::Char('q') => break,
-                        KeyCode::Tab => app.focus = Focus::Stopwatch,
-                        KeyCode::BackTab => app.focus = Focus::Input,
                         _ => {}
                     },
 
@@ -220,11 +220,10 @@ pub fn run(config: &crate::config::Config) -> Result<()> {
                             );
                             return Ok(());
                         }
-                        KeyCode::Up | KeyCode::Char('k') => app.focus = Focus::Presets,
-                        KeyCode::Down | KeyCode::Char('j') => app.focus = Focus::Pomodoro,
+                        KeyCode::Left | KeyCode::Char('h') | KeyCode::BackTab => app.focus = Focus::Presets,
+                        KeyCode::Right | KeyCode::Char('l') | KeyCode::Tab => app.focus = Focus::Pomodoro,
+                        KeyCode::Up => app.focus = Focus::Input,
                         KeyCode::Esc | KeyCode::Char('q') => break,
-                        KeyCode::Tab => app.focus = Focus::Pomodoro,
-                        KeyCode::BackTab => app.focus = Focus::Presets,
                         _ => {}
                     },
 
@@ -232,6 +231,7 @@ pub fn run(config: &crate::config::Config) -> Result<()> {
                     Focus::Pomodoro => match key.code {
                         KeyCode::Up | KeyCode::Char('k') => app.pomo_field = app.pomo_field.prev(),
                         KeyCode::Down | KeyCode::Char('j') => app.pomo_field = app.pomo_field.next(),
+                        KeyCode::Left | KeyCode::Char('h') => app.focus = Focus::Stopwatch,
                         KeyCode::Enter => {
                             disable_raw_mode()?;
                             execute!(std::io::stdout(), LeaveAlternateScreen)?;
@@ -338,22 +338,38 @@ fn ui(f: &mut Frame, app: &mut DashboardApp) {
         );
     f.render_widget(input, chunks[1]);
 
-    // --- 3. MIDDLE AREA (Presets + Stopwatch on Left, Pomodoro on Right) ---
-    let middle_chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(50),
-            Constraint::Percentage(50),
-        ])
-        .split(chunks[2]);
+    // --- 3. MIDDLE AREA (Dynamically divided according to size) ---
+    let (presets_area, stopwatch_area, pomodoro_area) = if area.width >= 72 {
+        let cols = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(28), // Presets
+                Constraint::Percentage(34), // Stopwatch
+                Constraint::Percentage(38), // Custom Pomodoro
+            ])
+            .split(chunks[2]);
+        (cols[0], cols[1], cols[2])
+    } else {
+        let cols = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(45),
+                Constraint::Percentage(55),
+            ])
+            .split(chunks[2]);
 
-    let left_chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(6),    // Presets
-            Constraint::Length(6), // Stopwatch
-        ])
-        .split(middle_chunks[0]);
+        let presets_count = app.presets.len() as u16;
+        let presets_h = (presets_count + 2).min(chunks[2].height / 2);
+        let left_rows = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(presets_h),
+                Constraint::Min(6),
+            ])
+            .split(cols[0]);
+
+        (left_rows[0], left_rows[1], cols[1])
+    };
 
     // --- PRESETS LIST ---
     let items: Vec<ListItem> = app
@@ -387,7 +403,7 @@ fn ui(f: &mut Frame, app: &mut DashboardApp) {
 
     let mut state = ListState::default();
     state.select(Some(app.selected_preset));
-    f.render_stateful_widget(list, left_chunks[0], &mut state);
+    f.render_stateful_widget(list, presets_area, &mut state);
 
     // --- STOPWATCH PANEL ---
     let sw_style = match app.focus {
@@ -400,21 +416,8 @@ fn ui(f: &mut Frame, app: &mut DashboardApp) {
         .title(" Stopwatch ")
         .border_style(sw_style);
 
-    let sw_inner_area = sw_block.inner(left_chunks[1]);
-    f.render_widget(sw_block, left_chunks[1]);
-
-    let sw_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1), // Description
-            Constraint::Length(3), // Start Button
-        ])
-        .split(sw_inner_area);
-
-    let sw_desc = Paragraph::new("Count up from 00:00 • Track elapsed task time")
-        .style(Style::default().fg(Color::DarkGray))
-        .alignment(Alignment::Center);
-    f.render_widget(sw_desc, sw_layout[0]);
+    let sw_inner_area = sw_block.inner(stopwatch_area);
+    f.render_widget(sw_block, stopwatch_area);
 
     let sw_btn_field_style = if app.focus == Focus::Stopwatch {
         Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
@@ -431,7 +434,50 @@ fn ui(f: &mut Frame, app: &mut DashboardApp) {
         .alignment(Alignment::Center)
         .style(sw_btn_style)
         .block(Block::default().borders(Borders::ALL).border_style(sw_btn_field_style));
-    f.render_widget(sw_button, sw_layout[1]);
+
+    if sw_inner_area.height >= 7 {
+        let sw_layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(1), // Subtitle
+                Constraint::Length(1), // Spacer
+                Constraint::Length(1), // Feature 1
+                Constraint::Length(1), // Feature 2
+                Constraint::Length(1), // Feature 3
+                Constraint::Min(1),    // Flexible Spacer
+                Constraint::Length(3), // Start Button
+            ])
+            .split(sw_inner_area);
+
+        let sw_desc = Paragraph::new("⏱ Real-Time Task Tracker")
+            .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+            .alignment(Alignment::Center);
+        f.render_widget(sw_desc, sw_layout[0]);
+
+        let f1 = Paragraph::new(" • Count up from 00:00").style(Style::default().fg(Color::DarkGray));
+        let f2 = Paragraph::new(" • [Space] Pause / Resume").style(Style::default().fg(Color::DarkGray));
+        let f3 = Paragraph::new(" • [Shift+R] Reset to 00:00").style(Style::default().fg(Color::DarkGray));
+        f.render_widget(f1, sw_layout[2]);
+        f.render_widget(f2, sw_layout[3]);
+        f.render_widget(f3, sw_layout[4]);
+
+        f.render_widget(sw_button, sw_layout[6]);
+    } else {
+        let sw_layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(1), // Description
+                Constraint::Min(0),    // Spacer
+                Constraint::Length(3), // Start Button
+            ])
+            .split(sw_inner_area);
+
+        let sw_desc = Paragraph::new("Count up from 00:00")
+            .style(Style::default().fg(Color::DarkGray))
+            .alignment(Alignment::Center);
+        f.render_widget(sw_desc, sw_layout[0]);
+        f.render_widget(sw_button, sw_layout[2]);
+    }
 
     // --- CUSTOM POMODORO PANEL ---
     let pomo_style = match app.focus {
@@ -444,8 +490,8 @@ fn ui(f: &mut Frame, app: &mut DashboardApp) {
         .title(" Custom Pomodoro ")
         .border_style(pomo_style);
     
-    let pomo_inner_area = pomo_block.inner(middle_chunks[1]);
-    f.render_widget(pomo_block, middle_chunks[1]);
+    let pomo_inner_area = pomo_block.inner(pomodoro_area);
+    f.render_widget(pomo_block, pomodoro_area);
 
     let pomo_layout = Layout::default()
         .direction(Direction::Vertical)
@@ -455,7 +501,7 @@ fn ui(f: &mut Frame, app: &mut DashboardApp) {
             Constraint::Length(1), // Long Break
             Constraint::Length(1), // Total Rounds
             Constraint::Length(1), // Long Break Int
-            Constraint::Length(1), // Spacer
+            Constraint::Min(1),    // Flexible Spacer
             Constraint::Length(3), // Start Button
         ])
         .split(pomo_inner_area);
@@ -499,11 +545,11 @@ fn ui(f: &mut Frame, app: &mut DashboardApp) {
     // --- 4. FOOTER ---
     let help_text = match app.focus {
         Focus::Input => "Type duration (e.g. 10m) • <Enter> Start • <Tab> Presets",
-        Focus::Presets => "↑/↓ Navigate • <Enter> Select • <Tab> Stopwatch • <Shift+Tab> Input",
-        Focus::Stopwatch => "<Enter> Start Stopwatch • <Tab> Pomodoro Settings • <Shift+Tab> Presets",
+        Focus::Presets => "↑/↓ Navigate • <Enter> Select • ←/→ Switch Column • <Tab> Stopwatch",
+        Focus::Stopwatch => "<Enter> Start Stopwatch • ←/→ Switch Column • <Tab> Pomodoro",
         Focus::Pomodoro => match app.pomo_field {
-            PomoField::StartButton => "↑/↓ Navigate • <Enter> Start Pomodoro • <Tab> Input • <Shift+Tab> Stopwatch",
-            _ => "Type value (e.g. 25m / 4) • <Enter> Start Pomodoro • ↑/↓ Navigate • <Tab> Input",
+            PomoField::StartButton => "↑/↓ Navigate • <Enter> Start Pomodoro • ←/→ Switch Column • <Tab> Input",
+            _ => "Type value (e.g. 25m / 4) • <Enter> Start Pomodoro • ↑/↓ Navigate • ←/→ Switch Column",
         }
     };
     let footer = Paragraph::new(help_text).style(Style::default().fg(Color::DarkGray));

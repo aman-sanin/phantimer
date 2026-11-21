@@ -45,6 +45,7 @@ pub struct TimerState {
     pub is_paused: bool,
     pub is_pomodoro: bool,
     pub is_stopwatch: bool,
+    pub is_done: bool,
     pub current_stage: Option<PomoStage>,
     pub current_round: u32,
     pub total_rounds: u32,
@@ -111,6 +112,7 @@ pub fn run(
             is_paused: false,
             is_pomodoro: true,
             is_stopwatch: false,
+            is_done: false,
             current_stage: Some(stage),
             current_round: 1,
             total_rounds: r,
@@ -126,6 +128,7 @@ pub fn run(
             is_paused: false,
             is_pomodoro: false,
             is_stopwatch: true,
+            is_done: false,
             current_stage: None,
             current_round: 0,
             total_rounds: 0,
@@ -142,6 +145,7 @@ pub fn run(
             is_paused: false,
             is_pomodoro: false,
             is_stopwatch: false,
+            is_done: false,
             current_stage: None,
             current_round: 0,
             total_rounds: 0,
@@ -152,7 +156,7 @@ pub fn run(
 
     // Send initial notification if starting Pomodoro
     if is_pomodoro {
-        crate::notification::send("🍅 Focus Session 1 Started", "Time to get down to work!");
+        crate::notification::send("🍅 Focus Session 1 Started", "Time to get down to work!", false);
     }
 
     let mut last_tick = Instant::now();
@@ -237,7 +241,7 @@ pub fn run(
                             } else {
                                 (format!("☕ Short Break"), format!("Completed round {}! Take a short break.", state.current_round))
                             };
-                            crate::notification::send(&title, &body);
+                            crate::notification::send(&title, &body, config.sound.unwrap_or(true));
 
                             let next_secs = next_stage.duration_secs(durs);
                             state.current_stage = Some(next_stage);
@@ -255,8 +259,18 @@ pub fn run(
                             // Transition to next round Work
                             state.current_round += 1;
                             if state.current_round > state.total_rounds {
-                                crate::notification::send("🎉 Pomodoro Complete!", "Excellent effort! You have completed all sessions.");
-                                std::thread::sleep(Duration::from_secs(3));
+                                state.is_done = true;
+                                state.title = "🎉 Pomodoro Complete!".to_string();
+                                state.message = Some("DONE".to_string());
+                                let _ = terminal.draw(|f| {
+                                    ui::render(f, &state, config);
+                                });
+                                crate::notification::send(
+                                    "🎉 Pomodoro Complete!",
+                                    "Excellent effort! You have completed all sessions.",
+                                    config.sound.unwrap_or(true),
+                                );
+                                std::thread::sleep(Duration::from_millis(1500));
                                 break;
                             } else {
                                 let next_stage = PomoStage::Work;
@@ -264,6 +278,7 @@ pub fn run(
                                 crate::notification::send(
                                     &format!("🍅 Work Session {}", state.current_round),
                                     "Time to focus! Back to work.",
+                                    config.sound.unwrap_or(true),
                                 );
 
                                 state.current_stage = Some(next_stage);
@@ -278,8 +293,18 @@ pub fn run(
                     }
                 }
             } else {
-                crate::notification::send("🔔 Timer Finished", "Your countdown timer has completed.");
-                std::thread::sleep(Duration::from_secs(2));
+                state.is_done = true;
+                state.title = "🔔 Timer Finished".to_string();
+                state.message = Some("DONE".to_string());
+                let _ = terminal.draw(|f| {
+                    ui::render(f, &state, config);
+                });
+                crate::notification::send(
+                    "🔔 Timer Finished",
+                    "Your countdown timer has completed.",
+                    config.sound.unwrap_or(true),
+                );
+                std::thread::sleep(Duration::from_millis(1500));
                 break;
             }
         }
